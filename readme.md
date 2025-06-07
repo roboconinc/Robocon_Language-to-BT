@@ -23,21 +23,91 @@ Output:
 ```xml
 <root BTCPP_format="4">
   <BehaviorTree ID="lift_sheathing">
-    <sequence>
-      <Outrigger_Rotate rotation="170"/>
-      <Outrigger_Engage extention="0.350"/>
-      <Visual-Find class="sheathing"/>
-      <Arm_Move_IK_Plan_ByDescription ArticulationGroup="None" From="None" To="None"/>
-      <Arm_Move_IK_Execute/>
-      <Hook_Grabber extention="0"/>
-      <Boom_Slewing rotation="..."/>
-      <Boom_Lift extention="..."/>
-      <Boom_Extend extention="..."/>
-      <Pulley_Lift distance="4"/>
-      <Hook_Grabber extention="1"/>
-      <Outrigger_Engage extention="0"/>
-      <Outrigger_Rotate rotation="0"/>
-    </sequence>
+    <ActionPrompt prompt="Lift the sheathing to the red flag">
+      <Sequence>
+
+        <!-- Fallback to find sheathing object -->
+        <Fallback>
+          <Visual_Find class="Sheathing_Stack" objectId="{AttachObjectId}"/>
+          <Visual_Find class="Sheathing_Leaned" objectId="{AttachObjectId}"/>
+          <Repeat num_cycles="2">
+            <Sequence>
+              <Wait duration="1"/>
+              <Fallback>
+                <Visual_Find class="Sheathing_Stack" objectId="{AttachObjectId}"/>
+                <Visual_Find class="Sheathing_Leaned" objectId="{AttachObjectId}"/>
+              </Fallback>
+            </Sequence>
+          </Repeat>
+          <Notify error="Could not find sheathing"/>
+        </Fallback>
+
+        <!-- Fallback to find red flag -->
+        <Fallback>
+          <Visual_Find class="Flag" color="Red" objectId="{GoalPointObjectId}"/>
+          <Repeat num_cycles="2">
+            <Sequence>
+              <Wait duration="1"/>
+              <Visual_Find class="Flag" color="Red" objectId="{GoalPointObjectId}"/>
+            </Sequence>
+          </Repeat>
+          <Notify error="Could not find red flag"/>
+        </Fallback>
+
+        <!-- Check boom reach and replan if needed -->
+        <Fallback>
+          <CheckBoomRange objectId="{AttachObjectId}"/>
+
+          <Sequence>
+            <Fallback>
+              <CheckOutriggersRetracted/>
+              <Sequence>
+                <Outrigger_Engage extention="0"/>
+                <Outrigger_Rotate rotation="0"/>
+              </Sequence>
+            </Fallback>
+
+            <Fallback>
+              <PlanTravelToOptimalLiftPoint source="{AttachObjectId}" target="{GoalPointObjectId}" goal="{travelGoal}" mode="within_range_of_both"/>
+              <PlanTravelToOptimalLiftPoint source="{AttachObjectId}" target="{GoalPointObjectId}" goal="{travelGoal}" mode="min_distance_to_goal"/>
+            </Fallback>
+
+            <ComputeRoute goal="{travelGoal}" path="{route_path}" route="{route}" use_poses="true" error_code_id="{compute_route_error_code}" error_msg="{compute_route_error_msg}"/>
+            <SmoothPath unsmoothed_path="{route_path}" smoothed_path="{path}" smoother_id="route_smoother" error_code_id="{smoother_error_code}" error_msg="{smoother_error_msg}"/>
+
+            <RepeatUntilSuccess>
+              <Sequence>
+                <FollowPath path="{path}" controller_id="{selected_controller}" error_code_id="{follow_path_error_code}" error_msg="{follow_path_error_msg}"/>
+                <Wait duration="5"/>
+                <ComputeRoute goal="{travelGoal}" path="{route_path}" route="{route}" use_poses="true" error_code_id="{compute_route_error_code}" error_msg="{compute_route_error_msg}"/>
+                <SmoothPath unsmoothed_path="{route_path}" smoothed_path="{path}" smoother_id="route_smoother" error_code_id="{smoother_error_code}" error_msg="{smoother_error_msg}"/>
+              </Sequence>
+            </RepeatUntilSuccess>
+
+            <CheckBoomRange objectId="{AttachObjectId}"/>
+            <Sequence>
+              <Outrigger_Rotate rotation="170"/>
+              <Outrigger_Engage extention="0.350"/>
+            </Sequence>
+          </Sequence>
+        </Fallback>
+
+        <!-- Arm and Suction Sequence to pick and place object -->
+        <Sequence>
+          <Arm_Move_IK_Plan_ByObjectId ArticulationGroup="MainBoom" ToObjectId="{AttachObjectId}"/>
+          <Arm_Move_IK_Execute/>
+          <Arm_Move_IK_Plan_ByObjectId ArticulationGroup="EndSucker" ToObjectId="{AttachObjectId}"/>
+          <Arm_Move_IK_Execute/>
+          <EndEffectorSuckerSuck Suction="1"/>
+          <Arm_Move_IK_Plan_ByObjectId ArticulationGroup="MainBoom" ToObjectId="{GoalPointObjectId}"/>
+          <Arm_Move_IK_Execute/>
+          <Arm_Move_IK_Plan_ByObjectId ArticulationGroup="EndSucker" ToObjectId="{GoalPointObjectId}"/>
+          <Arm_Move_IK_Execute/>
+          <EndEffectorSuckerSuck Suction="0"/>
+        </Sequence>
+
+      </Sequence>
+    </ActionPrompt>
   </BehaviorTree>
 </root>
 ```
